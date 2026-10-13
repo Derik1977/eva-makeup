@@ -121,7 +121,49 @@ async function watchChatRealtime(){
    if((payload.new?.booking_id??null)===(bookingId??null)&&$('chatLog'))renderChat();
  }).subscribe();
 }
-function chatShell(){return '<div id="chatLog" class="chatlog"></div><div class="row" style="margin-top:12px"><input id="chatText" style="flex:1" placeholder="Ваше сообщение"><button onclick="sendMessage()">Отправить</button></div>'}async function openChat(id){selectedBooking=id;$('clientContent').innerHTML='<h3>Чат заказа №'+id+'</h3>'+chatShell();await renderChat();watchChatRealtime()}async function renderChat(){if(!user||!$('chatLog'))return;let q=sb.from('messages').select('sender_id,body,created_at').eq('client_id',artist?selectedClient:user.id).order('created_at');q=selectedBooking?q.eq('booking_id',selectedBooking):q.is('booking_id',null);let {data,error}=await q;$('chatLog').innerHTML=error?'<p class="error">'+esc(error.message)+'</p>':(data||[]).map(m=>`<div class="bubble ${m.sender_id===user.id?'mine':''}">${esc(m.body)}</div>`).join('')||'<p class="muted">Начните переписку</p>';$('chatLog').scrollTop=$('chatLog').scrollHeight}async function sendMessage(){let text=$('chatText')?.value.trim();if(!text||!user)return;let clientId=artist?selectedClient:user.id;let {error}=await sb.from('messages').insert({client_id:clientId,booking_id:selectedBooking,sender_id:user.id,body:text});if(error)return toast(error.message);$('chatText').value='';await renderChat()}async function artistTab(tab){
+function chatShell(){return '<div id="chatLog" class="chatlog"></div><div class="row" style="margin-top:12px"><input id="chatText" style="flex:1" placeholder="Ваше сообщение"><button onclick="sendMessage()">Отправить</button></div><div class="field"><label>Прикрепить фотографию JPG, PNG или WEBP до 5 МБ</label><input type="file" id="chatImage" accept="image/jpeg,image/png,image/webp"></div>'}
+async function openChat(id){selectedBooking=id;$('clientContent').innerHTML='<h3>Чат заказа №'+id+'</h3>'+chatShell();await renderChat();watchChatRealtime()}
+async function renderChat(){
+ if(!user||!$('chatLog'))return;
+ let q=sb.from('messages').select('id,sender_id,body,created_at,image_path,booking_id').eq('client_id',artist?selectedClient:user.id).order('created_at');
+ q=selectedBooking?q.eq('booking_id',selectedBooking):q.is('booking_id',null);
+ const {data,error}=await q;
+ if(error){$('chatLog').textContent=error.message;return}
+ const rows=await Promise.all((data||[]).map(async m=>{
+  let photo='';
+  if(m.image_path){
+   const signed=await sb.storage.from('eva-client-private').createSignedUrl(m.image_path,600);
+   if(!signed.error)photo='<p><img loading="lazy" src="'+esc(signed.data.signedUrl)+'" alt="Фото из переписки" style="max-width:180px;border-radius:8px"></p><button class="out" onclick="saveChatPhoto(\''+esc(m.image_path)+'\','+(m.booking_id||'null')+')">Сохранить в карточку</button>';
+  }
+  return '<div class="bubble '+(m.sender_id===user.id?'mine':'')+'">'+(m.body?'<p>'+esc(m.body)+'</p>':'')+photo+'</div>';
+ }));
+ $('chatLog').innerHTML=rows.join('')||'<p class="muted">Начните переписку</p>';
+ $('chatLog').scrollTop=$('chatLog').scrollHeight;
+}
+async function sendMessage(){
+ const body=$('chatText')?.value.trim()||'',file=$('chatImage')?.files?.[0],cid=artist?selectedClient:user?.id;
+ if(!user||!cid||(!body&&!file))return;
+ let path=null;
+ if(file){
+  if(file.size>5242880||!['image/jpeg','image/png','image/webp'].includes(file.type))return toast('Фото должно быть JPG, PNG или WEBP, до 5 МБ');
+  const ext=file.type==='image/png'?'png':file.type==='image/webp'?'webp':'jpg';
+  path=cid+'/'+crypto.randomUUID()+'.'+ext;
+  const {error:uploadError}=await sb.storage.from('eva-client-private').upload(path,file,{contentType:file.type,upsert:false});
+  if(uploadError)return toast(uploadError.message);
+ }
+ const {error}=await sb.from('messages').insert({client_id:cid,booking_id:selectedBooking,sender_id:user.id,body,image_path:path});
+ if(error){if(path)await sb.storage.from('eva-client-private').remove([path]);return toast(error.message)}
+ $('chatText').value='';if($('chatImage'))$('chatImage').value='';await renderChat();
+}
+async function saveChatPhoto(path,bookingId){
+ const cid=artist?selectedClient:user.id;
+ if(!cid)return;
+ const type=prompt('Категория: reference — пожелание, result — результат','reference');
+ if(!['reference','result'].includes(type))return;
+ const {error}=await sb.from('client_photos').insert({client_id:cid,booking_id:bookingId||null,photo_type:type,object_path:path});
+ toast(error?error.message:'Фотография добавлена в карточку клиента');
+}
+async function artistTab(tab){
  if(!artist)return;
  const root=$('artistContent');root.innerHTML='<p>Загрузка...</p>';
  if(tab==='calendar'){await renderArtistCalendar(root);return}
