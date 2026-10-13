@@ -441,7 +441,7 @@ root.innerHTML='<div class="panel"><h3>Новая запись без регис
 async function createManualBooking(){
 const name=$('manualName').value.trim(),phone=$('manualPhone').value.trim(),service_id=Number($('manualService').value),kind=$('manualKind').value,address=$('manualAddress')?.value.trim()||null;
 const date=$('manualDate').value,time=$('manualTime').value;
-if(name.length<2||phone.replace(/\\D/g,'').length<10||!date||!time)return toast('Заполните имя, телефон, дату и время');
+if(name.length<2||phone.replace(/\D/g,'').length<10||!date||!time)return toast('Заполните имя, телефон, дату и время');
 if(kind==='travel'&&(!address||address.length<5))return toast('Укажите адрес выезда');
 if(!confirm('Создать запись для '+name+'?'))return;
 const record={client_id:null,guest_name:name,guest_phone:phone,guest_lead_source:$('manualSource').value||null,service_id,kind,start_at:localISO(date,time),address:kind==='travel'?address:null,agreed_price_rub:0};
@@ -577,7 +577,7 @@ async function renderArtistAnalytics(root){
  const cancelled=monthOrders.filter(x=>x.status==='cancelled').length;
  root.innerHTML='<div class="panel"><h3>Аналитика</h3><div class="field"><label>Месяц</label><input type="month" value="'+ym+'" onchange="setAnalyticsMonth(this.value)"></div></div><div class="cards"><div class="card"><p>Выполнено услуг</p><h2>'+current.length+'</h2></div><div class="card"><p>Выручка</p><h2>'+rub(rev)+'</h2></div><div class="card"><p>Средний чек</p><h2>'+rub(current.length?Math.round(rev/current.length):0)+'</h2></div><div class="card"><p>Результат до налогов</p><h2>'+rub(rev-cost)+'</h2></div><div class="card"><p>Отменено заявок</p><h2>'+cancelled+'</h2></div><div class="card"><p>Выручка за прошлый месяц</p><h2>'+rub(prevRev)+'</h2></div></div><div class="panel"><h3>Продажи по услугам</h3>'+table(servicesBy)+'<h3>Студия и выезды</h3>'+table(kinds)+'<h3>Источники привлечения</h3>'+table(sources)+'<h3>Клиенты</h3><p>Первое посещение: '+newCount+' · Повторное: '+repeatCount+'</p><p class="muted">Учёт повторных посещений основан на выполненных заказах. Для гостевых записей используется номер телефона. Выручка сопоставляется с расходами по закупкам за период.</p></div>';
 }
-function setAnalyticsMonth(month){if(/^\\d{4}-\\d{2}$/.test(month)){localStorage.setItem('eva-analytics-month',month);artistTab('analytics')}}
+function setAnalyticsMonth(month){if(/^\d{4}-\d{2}$/.test(month)){localStorage.setItem('eva-analytics-month',month);artistTab('analytics')}}
 async function loadSiteContent(){
  const {data,error}=await sb.from('site_content').select('*').eq('id',true).maybeSingle();
  if(error||!data)return;
