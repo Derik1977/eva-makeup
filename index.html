@@ -142,7 +142,7 @@ if(tab==='orders'){
    const {data,error}=await sb.from('bookings').select('*,services(title),profiles(full_name,phone)').order('start_at',{ascending:false}).limit(100);
    if(error){root.textContent=error.message;return}
    const all=data||[];
-   root.innerHTML='<div class="panel"><h3>Заявки</h3><label>Поиск клиента, услуги или номера</label><input id="orderSearch" oninput="filterArtistOrders()" placeholder="Найти заявку"><div id="orderItems">'+all.map(o=>'<div class="item order-item" data-search="'+esc((o.profiles?.full_name||'')+' '+o.id+' '+(o.services?.title||''))+'"><div class="row"><b>№ '+o.id+' · '+esc(o.profiles?.full_name||o.guest_name||'Клиент')+' · '+esc(o.services?.title||'Услуга')+'</b><span class="pill">'+esc(o.status)+'</span></div><p>'+fmt(o.start_at)+' · '+rub(o.agreed_price_rub)+' · '+(o.kind==='travel'?'Выезд':'Студия')+'</p>'+(o.address?'<p>Адрес: '+esc(o.address)+'</p>':'')+'<p class="muted">Предоплата: '+(o.deposit_required_rub==null?'не назначена':rub(o.deposit_required_rub))+' · срок: '+(o.deposit_due_at?fmt(o.deposit_due_at):'не назначен')+'</p><div class="choice"><button onclick="setDeposit('+o.id+')">Назначить предоплату</button><button class="out" onclick="recordPayment('+o.id+')">Получить оплату</button><button class="out" onclick="changeBooking('+o.id+',\'confirmed\')">Подтвердить</button><button class="out" onclick="changeBooking('+o.id+',\'completed\')">Выполнен</button><button class="out" onclick="changeBooking('+o.id+',\'cancelled\')">Отменить</button><button class="out" onclick="saveArtistNote('+o.id+')">Заметка</button><button onclick="artistChat(\''+o.client_id+'\','+o.id+')">Чат</button></div></div>').join('')+'</div></div>';
+   root.innerHTML='<div class="panel"><h3>Заявки</h3><label>Поиск клиента, услуги или номера</label><input id="orderSearch" oninput="filterArtistOrders()" placeholder="Найти заявку"><div id="orderItems">'+all.map(o=>'<div class="item order-item" data-search="'+esc((o.profiles?.full_name||'')+' '+o.id+' '+(o.services?.title||''))+'"><div class="row"><b>№ '+o.id+' · '+esc(o.profiles?.full_name||o.guest_name||'Клиент')+' · '+esc(o.services?.title||'Услуга')+'</b><span class="pill">'+esc(o.status)+'</span></div><p>'+fmt(o.start_at)+' · '+rub(o.agreed_price_rub)+' · '+(o.kind==='travel'?'Выезд':'Студия')+'</p>'+(o.address?'<p>Адрес: '+esc(o.address)+'</p>':'')+'<p class="muted">Предоплата: '+(o.deposit_required_rub==null?'не назначена':rub(o.deposit_required_rub))+' · срок: '+(o.deposit_due_at?fmt(o.deposit_due_at):'не назначен')+'</p><div class="choice"><button onclick="setDeposit('+o.id+')">Назначить предоплату</button><button class="out" onclick="recordPayment('+o.id+')">Получить оплату</button><button class="out" onclick="changeBooking('+o.id+',\'confirmed\')">Подтвердить</button><button class="out" onclick="changeBooking('+o.id+',\'completed\')">Выполнен</button><button class="out" onclick="changeBooking('+o.id+',\'cancelled\')">Отменить</button><button class="out" onclick="saveArtistNote('+o.id+')">Заметка</button><button class="out" onclick="editBooking('+o.id+')">Изменить</button><button class="out" onclick="bookingHistory('+o.id+')">История</button><button onclick="artistChat(\''+o.client_id+'\','+o.id+')">Чат</button></div></div>').join('')+'</div></div>';
    return;
  }
  if(tab==='clients'||tab==='messages'){
@@ -340,6 +340,26 @@ async function resetClientPassword(id){
  const {data,error}=await sb.functions.invoke('eva-password-reset',{body:{client_id:id,verified_by_artist:true}});
  if(error||!data?.temporary_password)return toast(data?.error||error?.message||'Не удалось выдать пароль');
  window.prompt('Скопируйте временный пароль и передайте только владельцу аккаунта. Он будет показан здесь один раз:',data.temporary_password);
+}
+async function editBooking(id){
+ const {data:o,error}=await sb.from('bookings').select('*').eq('id',id).single();
+ if(error)return toast(error.message);
+ const date=new Date(o.start_at).toLocaleString('sv-SE',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(' ','T');
+ const root=$('artistContent');
+ root.innerHTML='<div class="panel"><h3>Изменить заявку № '+id+'</h3><div class="field"><label>Дата и время</label><input id="editStart" type="datetime-local" value="'+date+'"></div><div class="field"><label>Стоимость, ₽</label><input id="editPrice" type="number" min="0" value="'+o.agreed_price_rub+'"></div><div class="field"><label>Адрес</label><input id="editAddress"></div><button onclick="saveBookingEdit('+id+')">Сохранить</button><button class="out" onclick="artistTab(&quot;orders&quot;)">Назад</button></div>';
+ $('editAddress').value=o.address||'';
+}
+async function saveBookingEdit(id){
+ const d=$('editStart').value,n=Number($('editPrice').value),address=$('editAddress').value.trim();
+ if(!d||!Number.isInteger(n)||n<0)return toast('Проверьте данные');
+ let date=new Date(d+':00+03:00');if(!Number.isFinite(date.getTime()))return toast('Некорректная дата');
+ const {error}=await sb.from('bookings').update({start_at:date.toISOString(),agreed_price_rub:n,address:address||null}).eq('id',id);
+ if(error)toast(error.message);else{toast('Запись изменена');artistTab('orders')}
+}
+async function bookingHistory(id){
+ const {data,error}=await sb.from('booking_change_log').select('*').eq('booking_id',id).order('changed_at',{ascending:false}).limit(100);
+ if(error)return toast(error.message);
+ $('artistContent').innerHTML='<div class="panel"><h3>История № '+id+'</h3>'+((data||[]).map(x=>'<div class="item"><p>'+fmt(x.changed_at)+'</p><p>Статус: '+esc(x.old_status)+' → '+esc(x.new_status)+'</p><p>Цена: '+rub(x.old_price_rub)+' → '+rub(x.new_price_rub)+'</p></div>').join('')||'Изменений нет')+'<button class="out" onclick="artistTab(&quot;orders&quot;)">Назад</button></div>';
 }
 async function changeBooking(id,status){if(!confirm('Изменить статус заявки?'))return;let {error}=await sb.from('bookings').update({status}).eq('id',id);if(error)toast(error.message);else artistTab('orders')}async function artistChat(client,id){selectedClient=client;selectedBooking=id;$('artistContent').innerHTML='<div class="panel"><h3>Переписка с клиентом</h3>'+chatShell()+'</div>';await renderChat()}async function addFinance(table){let value=Number($(table==='expenses'?'expenseSum':'withdrawSum').value);if(!Number.isInteger(value)||value<=0)return toast('Введите корректную сумму');let row=table==='expenses'?{category:$('expenseCat').value,amount_rub:value}:{amount_rub:value};let {error}=await sb.from(table).insert(row);if(error)toast(error.message);else artistTab('finance')}
 populate();loadServices();loadPublishedReviews();setSession();sb?.auth.onAuthStateChange(()=>setTimeout(setSession,0));
