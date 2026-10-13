@@ -12,7 +12,7 @@
  const root=$('clientContent');root.innerHTML='<p class="muted">Загрузка...</p>';
  if(tab==='orders'){
  const {data,error}=await sb.from('bookings').select('id,kind,start_at,status,agreed_price_rub,services(title)').order('start_at',{ascending:false});
- root.innerHTML='<h3>Мои записи</h3>'+((data||[]).map(o=>'<div class="item"><div class="row"><b>'+esc(o.services?.title||'Услуга')+'</b><span class="pill">'+esc(o.status)+'</span></div><p>'+fmt(o.start_at)+' · '+(o.kind==='studio'?'Студия':'Выезд')+' · '+rub(o.agreed_price_rub)+'</p><button class="out" onclick="openChat('+o.id+')">Чат заказа</button></div>').join('')||'<p>Записей пока нет.</p>')+(error?'<p class="error">'+esc(error.message)+'</p>':'');
+ root.innerHTML='<h3>Мои записи</h3>'+((data||[]).map(o=>'<div class="item"><div class="row"><b>'+esc(o.services?.title||'Услуга')+'</b><span class="pill">'+esc(o.status)+'</span></div><p>'+fmt(o.start_at)+' · '+(o.kind==='studio'?'Студия':'Выезд')+' · '+rub(o.agreed_price_rub)+'</p><button class="out" onclick="openChat('+o.id+')">Чат заказа</button>'+(new Date(o.start_at).getTime()>Date.now()+24*3600000&&['pending','awaiting_deposit','confirmed'].includes(o.status)?'<button class="out" onclick="cancelClientBooking('+o.id+')">Отменить запись</button>':'')+'</div>').join('')||'<p>Записей пока нет.</p>')+(error?'<p class="error">'+esc(error.message)+'</p>':'');
  }else if(tab==='chat'){
  selectedBooking=null;root.innerHTML='<h3>Общий чат с Евой</h3>'+chatShell();await renderChat();
  }else if(tab==='photos'){
@@ -24,6 +24,11 @@
  }else{
  root.innerHTML='<h3>Мой профиль</h3><p>'+esc(profile?.full_name)+' · '+esc(profile?.phone||'')+'</p><button onclick="changeOwnPassword()">Изменить пароль</button>';
  }
+}
+async function cancelClientBooking(id){
+ if(!confirm('Отменить запись? Изменение сохранится в истории.'))return;
+ const {error}=await sb.from('bookings').update({status:'cancelled'}).eq('id',id);
+ if(error)toast(error.message);else{toast('Запись отменена');clientTab('orders')}
 }
 async function changeOwnPassword(){
  const password=prompt('Новый пароль, не менее 8 символов');
