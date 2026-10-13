@@ -339,12 +339,30 @@ async function payRecurring(id,amount,category){
 const dateKey=dt=>new Date(dt).toLocaleDateString('en-CA',{timeZone:'Europe/Moscow'});
 let calendarView=localStorage.getItem('eva-calendar-view')||'week',calendarPivot=new Date().toISOString().slice(0,10);
 async function renderArtistCalendar(root){
-const opts=[['day','День'],['week','Неделя'],['month','Месяц']];
-let qs=await sb.from('bookings').select('id,start_at,status,kind,agreed_price_rub,services(title,duration_min,buffer_min),profiles(full_name)').order('start_at',{ascending:true}).limit(500);
-let items=qs.data||[];
-const dayUTC=new Date(calendarPivot+'T12:00:00Z');
-const days=calendarView==='day'?[calendarPivot]:calendarView==='week'?Array.from({length:7},(_,i)=>{let d=new Date(dayUTC);d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7)+i);return d.toISOString().slice(0,10)}):Array.from({length:new Date(dayUTC.getUTCFullYear(),dayUTC.getUTCMonth()+1,0).getDate()},(_,i)=>calendarPivot.slice(0,7)+'-'+String(i+1).padStart(2,'0'));
-root.innerHTML='<div class="panel"><h3>Календарь записей</h3><p class="muted">Пн–Сб, 09:00–19:00. Выезды подтверждаются визажистом, для них резервируется время на дорогу.</p><div class="choice">'+opts.map(([k,v])=>'<button class="'+(calendarView===k?'':'out')+'" onclick="setArtistCalendarView(\''+k+'\')">'+v+'</button>').join('')+'</div><div class="field"><label>Дата просмотра</label><input type="date" value="'+calendarPivot+'" onchange="setArtistCalendarDate(this.value)"></div>'+days.map(d=>{let dayItems=items.filter(o=>dateKey(o.start_at)===d);return '<div class="item"><b>'+new Date(d+'T12:00:00Z').toLocaleDateString('ru-RU',{timeZone:'UTC',weekday:'short',day:'numeric',month:'short'})+'</b><p>'+(dayItems.map(o=>'<span class="pill">'+new Date(o.start_at).toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit'})+' · '+esc(o.profiles?.full_name||'Клиент')+' · '+esc(o.services?.title||'Услуга')+' · '+esc(o.status)+'</span>').join(' ')||'<span class="muted">Записей нет</span>')+'</p></div>'}).join('')+'</div>'+(qs.error?'<p>'+esc(qs.error.message)+'</p>':'');
+ const opts=[['day','День'],['week','Неделя'],['month','Месяц']];
+ const [qs,blocked]=await Promise.all([
+  sb.from('bookings').select('id,start_at,status,kind,guest_name,services(title,duration_min,buffer_min),profiles(full_name)').order('start_at',{ascending:true}).limit(500),
+  sb.from('calendar_blocks').select('id,starts_at,ends_at,title').order('starts_at',{ascending:true}).limit(300)
+ ]);
+ const items=qs.data||[],blocks=blocked.data||[];
+ const dayUTC=new Date(calendarPivot+'T12:00:00Z');
+ const days=calendarView==='day'?[calendarPivot]:calendarView==='week'?Array.from({length:7},(_,i)=>{let d=new Date(dayUTC);d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7)+i);return d.toISOString().slice(0,10)}):Array.from({length:new Date(dayUTC.getUTCFullYear(),dayUTC.getUTCMonth()+1,0).getDate()},(_,i)=>calendarPivot.slice(0,7)+'-'+String(i+1).padStart(2,'0'));
+ const time=t=>new Date(t).toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit'});
+ root.innerHTML='<div class="panel"><h3>Календарь записей</h3><p class="muted">Пн–Сб 09:00–19:00, выезды с резервом дороги.</p><div class="choice">'+opts.map(([k,v])=>'<button class="'+(calendarView===k?'':'out')+'" onclick="setArtistCalendarView(\''+k+'\')">'+v+'</button>').join('')+'</div><div class="field"><label>Дата просмотра</label><input type="date" value="'+calendarPivot+'" onchange="setArtistCalendarDate(this.value)"></div>'+days.map(d=>{
+ const dayItems=items.filter(o=>dateKey(o.start_at)===d),dayBlocks=blocks.filter(x=>dateKey(x.starts_at)===d);
+ return '<div class="item"><b>'+new Date(d+'T12:00:00Z').toLocaleDateString('ru-RU',{timeZone:'UTC',weekday:'short',day:'numeric',month:'short'})+'</b><p>'+(dayItems.map(o=>'<span class="pill">'+time(o.start_at)+' · '+esc(o.profiles?.full_name||o.guest_name||'Клиент')+' · '+esc(o.services?.title||'Услуга')+' · '+esc(o.status)+'</span>').join(' ')||'<span class="muted">Записей нет</span>')+'</p><p>'+dayBlocks.map(x=>'<span class="pill">🔒 '+time(x.starts_at)+'–'+time(x.ends_at)+' · '+esc(x.title)+' <button class="out" onclick="removeCalendarBlock('+x.id+')">Удалить</button></span>').join(' ')+'</p></div>'
+ }).join('')+'</div><div class="panel"><h3>Заблокировать личное время</h3><div class="field"><label>Дата</label><input id="blockDate" type="date" value="'+calendarPivot+'"></div><div class="field"><label>Начало</label><input id="blockFrom" type="time" value="12:00"></div><div class="field"><label>Окончание</label><input id="blockTo" type="time" value="13:00"></div><div class="field"><label>Причина</label><input id="blockTitle" value="Личное время"></div><button onclick="createCalendarBlock()">Заблокировать</button></div>'+(qs.error?'<p>'+esc(qs.error.message)+'</p>':'')+(blocked.error?'<p>'+esc(blocked.error.message)+'</p>':'');
+}
+async function createCalendarBlock(){
+ const date=$('blockDate').value,from=$('blockFrom').value,to=$('blockTo').value,title=$('blockTitle').value.trim()||'Личное время';
+ if(!date||!from||!to||from>=to)return toast('Проверьте временной интервал');
+ const {error}=await sb.from('calendar_blocks').insert({starts_at:localISO(date,from),ends_at:localISO(date,to),title});
+ if(error)toast(error.message);else{toast('Время заблокировано');artistTab('calendar')}
+}
+async function removeCalendarBlock(id){
+ if(!confirm('Удалить блокировку времени?'))return;
+ const {error}=await sb.from('calendar_blocks').delete().eq('id',id);
+ if(error)toast(error.message);else artistTab('calendar');
 }
 function setArtistCalendarView(view){calendarView=view;localStorage.setItem('eva-calendar-view',view);artistTab('calendar')}
 function setArtistCalendarDate(date){if(date){calendarPivot=date;artistTab('calendar')}}
