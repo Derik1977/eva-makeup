@@ -244,6 +244,7 @@ async function renderArtistSettings(root){
  await loadArtistPreferences();
  root.innerHTML='<div class="panel"><h3>Настройки главной страницы</h3><p class="muted">Изменения сохраняются в базе и доступны при следующем входе с любого устройства.</p><div id="dashboardConfig"></div><button onclick="saveDashboardPreferences()">Сохранить панель</button><hr><h3>Утверждённые рабочие правила</h3><p>Пн–Сб: 09:00–19:00. Запись не менее чем за 2 часа, на 60 дней вперёд. Самостоятельная отмена за 24 часа.</p><p>Выезд: +2 000 ₽, дорога +500 ₽, раннее начало до 09:00 +1 000 ₽. На дорогу резервируется по 60 минут.</p><p>Предоплата свадебных заказов и выездов: индивидуальная сумма и срок. Остаток наличными.</p></div>';
  drawDashboardControls();
+ drawPricingSettings(root);
 }
 function drawDashboardControls(){
  const box=$('dashboardConfig');if(!box)return;
@@ -263,6 +264,30 @@ function moveDashboard(id,offset){
 async function saveDashboardPreferences(){
  const {error}=await sb.from('artist_preferences').upsert({artist_id:user.id,dashboard_sections:dashboardChoice,updated_at:new Date().toISOString()});
  if(error)toast(error.message);else{toast('Настройки сохранены');artistTab('dashboard')}
+}
+function drawPricingSettings(root){
+ const fields=[['travel_fee_rub','Выезд, ₽'],['road_fee_rub','Дорога, ₽'],['early_fee_rub','Ранний выезд, ₽'],['travel_buffer_min','Время в пути в одну сторону, мин']];
+ let html='<div class="panel" style="margin-top:16px"><h3>Тарифы и услуги</h3><p class="muted">Цены применяются к новым заказам, уже созданные не пересчитываются автоматически.</p>'+fields.map(([key,label])=>'<div class="field"><label>'+label+'</label><input type="number" min="0" id="price_'+key+'" value="'+Number(pricing[key])+'"></div>').join('')+'<div class="field"><label>Раннее начало до</label><input type="time" id="price_early_before" value="'+String(pricing.early_before).slice(0,5)+'"></div><button onclick="saveTravelPricing()">Сохранить тарифы</button><h3>Услуги</h3>';
+ html+=services.map(x=>'<div class="item"><b>'+esc(x.title)+'</b><div class="field"><label>Цена, ₽</label><input id="servicePrice_'+x.id+'" type="number" min="0" value="'+x.price_rub+'"></div><div class="field"><label>Работа, мин</label><input id="serviceDuration_'+x.id+'" type="number" min="15" value="'+x.duration_min+'"></div><div class="field"><label>Перерыв, мин</label><input id="serviceBuffer_'+x.id+'" type="number" min="0" value="'+x.buffer_min+'"></div><button class="out" onclick="saveServiceSettings('+x.id+')">Сохранить услугу</button></div>').join('')+'</div>';
+ root.insertAdjacentHTML('beforeend',html);
+}
+async function saveTravelPricing(){
+ const row={};
+ for(const key of ['travel_fee_rub','road_fee_rub','early_fee_rub','travel_buffer_min']){
+   const n=Number($('price_'+key).value);
+   if(!Number.isInteger(n)||n<0)return toast('Укажите корректные неотрицательные суммы');
+   row[key]=n;
+ }
+ if(row.travel_buffer_min>240)return toast('Время дороги не более 240 мин');
+ row.early_before=$('price_early_before').value+':00';
+ const {error}=await sb.from('pricing_settings').update(row).eq('id',true);
+ if(error)toast(error.message);else{await loadPricingSettings();quote();toast('Тарифы обновлены');artistTab('settings')}
+}
+async function saveServiceSettings(id){
+ const price_rub=Number($('servicePrice_'+id).value),duration_min=Number($('serviceDuration_'+id).value),buffer_min=Number($('serviceBuffer_'+id).value);
+ if(!Number.isInteger(price_rub)||price_rub<0||!Number.isInteger(duration_min)||duration_min<15||!Number.isInteger(buffer_min)||buffer_min<0)return toast('Проверьте стоимость, длительность и перерыв');
+ const {error}=await sb.from('services').update({price_rub,duration_min,buffer_min}).eq('id',id);
+ if(error)toast(error.message);else{await loadServices();toast('Услуга обновлена');artistTab('settings')}
 }
 async function renderAppNotifications(root){
  const {data,error}=await sb.from('app_notifications').select('id,body,kind,created_at,read_at').order('created_at',{ascending:false}).limit(80);
