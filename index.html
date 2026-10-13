@@ -13,16 +13,26 @@
  if(tab==='calendar'){await renderArtistCalendar(root);return}
  if(tab==='settings'){renderArtistSettings(root);return}
  if(tab==='dashboard'){
-   const [b,m,p]=await Promise.all([sb.from('bookings').select('id,status,start_at'),sb.from('messages').select('id,created_at').order('created_at',{ascending:false}).limit(50),sb.from('payments').select('booking_id,amount_rub,kind')]);
-   const all=b.data||[],now=new Date(),today=dateKey(now);
-   const due=all.filter(x=>x.status==='awaiting_deposit').length;
+   const [b,m,p,ex,w]=await Promise.all([
+      sb.from('bookings').select('id,status,start_at,agreed_price_rub'),
+      sb.from('messages').select('id,created_at').order('created_at',{ascending:false}).limit(50),
+      sb.from('payments').select('amount_rub,kind'),
+      sb.from('expenses').select('amount_rub'),
+      sb.from('withdrawals').select('amount_rub')
+   ]);
+   const all=b.data||[],today=dateKey(new Date()),payments=p.data||[];
+   const cash=payments.reduce((n,x)=>n+x.amount_rub*(x.kind==='refund'?-1:1),0);
+   const cost=(ex.data||[]).reduce((n,x)=>n+x.amount_rub,0);
+   const takes=(w.data||[]).reduce((n,x)=>n+x.amount_rub,0);
+   const revenue=all.filter(x=>x.status==='completed').reduce((n,x)=>n+x.agreed_price_rub,0);
    const blocks=[
-     ['Записи на сегодня',all.filter(x=>dateKey(x.start_at)===today&&x.status!=='cancelled').length],
+     ['Записи на сегодня',all.filter(x=>dateKey(x.start_at)===today&&!['cancelled','no_show'].includes(x.status)).length],
      ['Новые заявки',all.filter(x=>x.status==='pending').length],
      ['Сообщения (последние 50)',(m.data||[]).length],
-     ['Ожидают предоплату',due]
+     ['Ожидают предоплату',all.filter(x=>x.status==='awaiting_deposit').length],
+     ['Финансовая сводка',rub(revenue-cost)]
    ];
-   root.innerHTML='<div class="cards">'+blocks.map(([t,n])=>'<div class="card"><p>'+t+'</p><h2>'+n+'</h2></div>').join('')+'</div><div class="panel"><h3>Быстрые действия</h3><div class="choice"><button onclick="artistTab(\'calendar\')">Календарь</button><button onclick="artistTab(\'orders\')">Заявки</button><button onclick="artistTab(\'messages\')">Чаты</button><button onclick="artistTab(\'finance\')">Финансы</button></div></div>';
+   root.innerHTML='<div class="cards">'+blocks.map(([t,n])=>'<div class="card"><p>'+t+'</p><h2>'+n+'</h2></div>').join('')+'</div><div class="panel"><h3>Быстрые действия</h3><div class="choice"><button onclick="artistTab(\'calendar\')">Календарь</button><button onclick="artistTab(\'orders\')">Заявки</button><button onclick="artistTab(\'messages\')">Чаты</button><button onclick="artistTab(\'finance\')">Финансы</button></div><p class="muted">Денежный поток: '+rub(cash-cost-takes)+' (за всё время учёта)</p></div>';
    return;
  }
  if(tab==='orders'){
