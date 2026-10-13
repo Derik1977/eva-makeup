@@ -82,32 +82,31 @@ function chatShell(){return '<div id="chatLog" class="chatlog"></div><div class=
  if(tab==='calendar'){await renderArtistCalendar(root);return}
  if(tab==='new'){renderManualBooking(root);return}
  if(tab==='notifications'){await renderAppNotifications(root);return}
- if(tab==='settings'){renderArtistSettings(root);return}
+ if(tab==='settings'){await renderArtistSettings(root);return}
  if(tab==='reviews'){await artistReviewModeration(root);return}
  if(tab==='dashboard'){
-   const [b,m,p,ex,w]=await Promise.all([
-      sb.from('bookings').select('id,status,start_at,agreed_price_rub'),
-      sb.from('messages').select('id,created_at').order('created_at',{ascending:false}).limit(50),
-      sb.from('payments').select('amount_rub,kind'),
-      sb.from('expenses').select('amount_rub'),
-      sb.from('withdrawals').select('amount_rub')
-   ]);
-   const all=b.data||[],today=dateKey(new Date()),payments=p.data||[];
-   const cash=payments.reduce((n,x)=>n+x.amount_rub*(x.kind==='refund'?-1:1),0);
-   const cost=(ex.data||[]).reduce((n,x)=>n+x.amount_rub,0);
-   const takes=(w.data||[]).reduce((n,x)=>n+x.amount_rub,0);
-   const revenue=all.filter(x=>x.status==='completed').reduce((n,x)=>n+x.agreed_price_rub,0);
-   const blocks=[
-     ['Записи на сегодня',all.filter(x=>dateKey(x.start_at)===today&&!['cancelled','no_show'].includes(x.status)).length],
-     ['Новые заявки',all.filter(x=>x.status==='pending').length],
-     ['Сообщения (последние 50)',(m.data||[]).length],
-     ['Ожидают предоплату',all.filter(x=>x.status==='awaiting_deposit').length],
-     ['Финансовая сводка',rub(revenue-cost)]
-   ];
-   root.innerHTML='<div class="cards">'+blocks.map(([t,n])=>'<div class="card"><p>'+t+'</p><h2>'+n+'</h2></div>').join('')+'</div><div class="panel"><h3>Быстрые действия</h3><div class="choice"><button onclick="artistTab(\'calendar\')">Календарь</button><button onclick="artistTab(\'orders\')">Заявки</button><button onclick="artistTab(\'messages\')">Чаты</button><button onclick="artistTab(\'finance\')">Финансы</button></div><p class="muted">Денежный поток: '+rub(cash-cost-takes)+' (за всё время учёта)</p></div>';
-   return;
- }
- if(tab==='orders'){
+ const [b,n,p,ex,w]=await Promise.all([
+   sb.from('bookings').select('id,status,start_at,agreed_price_rub'),
+   sb.from('app_notifications').select('id,kind').eq('kind','new_message').is('read_at',null),
+   sb.from('payments').select('amount_rub,kind'),sb.from('expenses').select('amount_rub'),sb.from('withdrawals').select('amount_rub')
+ ]);
+ const all=b.data||[],today=dateKey(new Date()),payments=p.data||[];
+ const cash=payments.reduce((n,x)=>n+x.amount_rub*(x.kind==='refund'?-1:1),0);
+ const cost=(ex.data||[]).reduce((n,x)=>n+x.amount_rub,0),takes=(w.data||[]).reduce((n,x)=>n+x.amount_rub,0);
+ const revenue=all.filter(x=>x.status==='completed').reduce((n,x)=>n+x.agreed_price_rub,0);
+ const val={
+  today:['Записи на сегодня',all.filter(x=>dateKey(x.start_at)===today&&!['cancelled','no_show'].includes(x.status)).length],
+  requests:['Новые заявки',all.filter(x=>x.status==='pending').length],
+  messages:['Непрочитанные сообщения',(n.data||[]).length],
+  prepay:['Ожидаемые предоплаты',all.filter(x=>x.status==='awaiting_deposit').length],
+  finance:['Финансовая сводка',rub(revenue-cost)],
+  quick:['Быстрые действия','']
+ };
+ const prefs=await loadArtistPreferences();
+ root.innerHTML=prefs.map(k=>k==='quick'?'<div class="panel"><h3>Быстрые действия</h3><div class="choice"><button onclick="artistTab(\'new\')">+ Новая запись</button><button onclick="artistTab(\'calendar\')">Календарь</button><button onclick="artistTab(\'orders\')">Заявки</button><button onclick="artistTab(\'messages\')">Чаты</button><button onclick="artistTab(\'finance\')">Финансы</button></div></div>':val[k]?'<div class="card"><p>'+val[k][0]+'</p><h2>'+val[k][1]+'</h2></div>':'').join('')+'<p class="muted">Денежный поток за всё время учёта: '+rub(cash-cost-takes)+'</p>';
+ return;
+}
+if(tab==='orders'){
    const {data,error}=await sb.from('bookings').select('*,services(title),profiles(full_name,phone)').order('start_at',{ascending:false}).limit(100);
    if(error){root.textContent=error.message;return}
    const all=data||[];
@@ -179,8 +178,39 @@ root.innerHTML='<div class="panel"><h3>Календарь записей</h3><p 
 }
 function setArtistCalendarView(view){calendarView=view;localStorage.setItem('eva-calendar-view',view);artistTab('calendar')}
 function setArtistCalendarDate(date){if(date){calendarPivot=date;artistTab('calendar')}}
-function renderArtistSettings(root){
-root.innerHTML='<div class="panel"><h3>Утверждённые настройки</h3><p>График: понедельник–суббота 09:00–19:00; запись за 2 часа — 60 дней вперёд.</p><p>Клиент может отменить запись не позднее чем за 24 часа (функцию самостоятельной отмены ещё тестируем).</p><p>Выезд: +2 000 ₽; дорога: +500 ₽; раннее начало до 09:00: +1 000 ₽.</p><p>Выезд требует подтверждения визажиста. В календаре закладываем 60 минут на дорогу до и после.</p><p>Предоплата для свадебного макияжа и выездов — сумма и срок индивидуальны.</p><p class="muted">Изменение тарифов и редактирование главной страницы добавим после проверки стабильности бронирования.</p></div>';
+const dashboardDefaults=['today','requests','messages','prepay','finance','quick'];
+const dashboardNames={today:'Записи на сегодня',requests:'Новые заявки',messages:'Непрочитанные сообщения',prepay:'Ожидаемые предоплаты',finance:'Финансовая сводка',quick:'Быстрые действия'};
+let dashboardChoice=[...dashboardDefaults];
+async function loadArtistPreferences(){
+ const {data}=await sb.from('artist_preferences').select('dashboard_sections').eq('artist_id',user.id).maybeSingle();
+ let requested=data?.dashboard_sections;
+ if(!Array.isArray(requested))requested=dashboardDefaults;
+ dashboardChoice=requested.filter(x=>dashboardNames[x]);
+ return dashboardChoice;
+}
+async function renderArtistSettings(root){
+ await loadArtistPreferences();
+ root.innerHTML='<div class="panel"><h3>Настройки главной страницы</h3><p class="muted">Изменения сохраняются в базе и доступны при следующем входе с любого устройства.</p><div id="dashboardConfig"></div><button onclick="saveDashboardPreferences()">Сохранить панель</button><hr><h3>Утверждённые рабочие правила</h3><p>Пн–Сб: 09:00–19:00. Запись не менее чем за 2 часа, на 60 дней вперёд. Самостоятельная отмена за 24 часа.</p><p>Выезд: +2 000 ₽, дорога +500 ₽, раннее начало до 09:00 +1 000 ₽. На дорогу резервируется по 60 минут.</p><p>Предоплата свадебных заказов и выездов: индивидуальная сумма и срок. Остаток наличными.</p></div>';
+ drawDashboardControls();
+}
+function drawDashboardControls(){
+ const box=$('dashboardConfig');if(!box)return;
+ box.innerHTML=dashboardDefaults.map(id=>'<div class="item row"><label><input style="width:auto" type="checkbox" '+(dashboardChoice.includes(id)?'checked':'')+' onchange="toggleDashboard(\''+id+'\',this.checked)"> '+dashboardNames[id]+'</label><span><button class="out" onclick="moveDashboard(\''+id+'\',-1)">↑</button> <button class="out" onclick="moveDashboard(\''+id+'\',1)">↓</button></span></div>').join('');
+}
+function toggleDashboard(id,checked){
+ if(checked&&!dashboardChoice.includes(id))dashboardChoice.push(id);
+ if(!checked)dashboardChoice=dashboardChoice.filter(x=>x!==id);
+ drawDashboardControls();
+}
+function moveDashboard(id,offset){
+ const i=dashboardChoice.indexOf(id),j=i+offset;
+ if(i<0||j<0||j>=dashboardChoice.length)return;
+ const t=dashboardChoice[i];dashboardChoice[i]=dashboardChoice[j];dashboardChoice[j]=t;
+ drawDashboardControls();
+}
+async function saveDashboardPreferences(){
+ const {error}=await sb.from('artist_preferences').upsert({artist_id:user.id,dashboard_sections:dashboardChoice,updated_at:new Date().toISOString()});
+ if(error)toast(error.message);else{toast('Настройки сохранены');artistTab('dashboard')}
 }
 async function renderAppNotifications(root){
  const {data,error}=await sb.from('app_notifications').select('id,body,kind,created_at,read_at').order('created_at',{ascending:false}).limit(80);
