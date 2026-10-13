@@ -46,13 +46,23 @@ async function refreshAvailableSlots(){
  }catch(e){if(seq!==availabilityRequest)return;$('bookBtn').disabled=true;$('availabilityStatus').textContent='Не удалось получить свободное время. Попробуйте позже или напишите Еве в чат.'}
 }
 async function loadServices(){if(!sb){toast('Не удалось подключить библиотеку Supabase');return}await loadPricingSettings();let {data,error}=await sb.from('services').select('*').eq('active',true).order('id');if(error){toast(error.message);return}services=data||[];$('svc').innerHTML=services.map(x=>`<option value="${x.id}">${esc(x.title)}</option>`).join('');$('serviceCards').innerHTML=services.map(x=>`<div class="card"><div class="eyebrow">MAKEUP</div><h3>${esc(x.title)}</h3><p class="muted">${x.duration_min} мин + ${x.buffer_min} мин перерыв</p><div class="price">${rub(x.price_rub)}</div><button onclick="$('svc').value='${x.id}';quote();page('book');refreshAvailableSlots()">Выбрать</button></div>`).join('');quote();refreshAvailableSlots()}async function setSession(){if(!sb)return;let {data}=await sb.auth.getUser();user=data.user;profile=null;artist=false;if(user){let p=await sb.from('profiles').select('*').eq('id',user.id).maybeSingle();profile=p.data;artist=user.app_metadata?.role==='artist';}renderAuth();renderArtist()}function renderAuth(){
- $('authBox').classList.toggle('hidden',!!user);$('accountBox').classList.toggle('hidden',!user);
- if(user){
-   if(user.app_metadata?.force_password_change){
-     $('accountBox').innerHTML='<div class="panel"><h3>Смена временного пароля</h3><p>Визажист выдал вам временный пароль. Установите свой постоянный пароль.</p><div class="field"><label>Новый пароль (8+ символов)</label><input type="password" id="newPermanentPassword" autocomplete="new-password"></div><button onclick="completeTemporaryPassword()">Сменить пароль</button> <button class="out" onclick="logout()">Выйти</button></div>';
-   }else{
-     $('hello').textContent='Здравствуйте, '+(profile?.full_name||'клиент');clientTab('orders');
-   }
+ $('authBox').classList.toggle('hidden',!!user);
+ $('accountBox').classList.toggle('hidden',!user);
+ let panel=$('temporaryPasswordPanel');
+ if(user?.app_metadata?.force_password_change){
+  if(!panel){
+   panel=document.createElement('div');panel.id='temporaryPasswordPanel';panel.className='panel';
+   panel.innerHTML='<h3>Смена временного пароля</h3><p>Установите новый постоянный пароль.</p><div class="field"><label>Новый пароль (не менее 8 символов)</label><input type="password" id="newPermanentPassword" autocomplete="new-password"></div><button onclick="completeTemporaryPassword()">Сменить пароль</button> <button class="out" onclick="logout()">Выйти</button>';
+   $('accountBox').prepend(panel);
+  }
+  Array.from($('accountBox').children).forEach(x=>{if(x!==panel)x.classList.add('hidden')});
+ }else{
+  panel?.remove();
+  Array.from($('accountBox').children).forEach(x=>x.classList.remove('hidden'));
+  if(user){
+   $('hello').textContent='Здравствуйте, '+(profile?.full_name||'клиент');
+   clientTab('orders');
+  }
  }
 }function renderArtist(){$('artistDenied').classList.toggle('hidden',artist);$('artistPanel').classList.toggle('hidden',!artist);if(artist)artistTab('dashboard')}async function signup(){try{let name=$('regName').value.trim(),phone=digits($('regPhone').value),pass=$('regPass').value;if(name.length<2||pass.length<8||pass!==$('regPass2').value||!$('consent').checked)throw Error('Проверьте имя, пароль и согласие');let email=emailFromPhone(phone);let {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name,phone:'+ '+phone,lead_source:$('regSource').value||null}}});if(error)throw error;if(!data.session){toast('Учётная запись создана, но вход заблокирован настройкой подтверждения почты в Supabase.');return}await setSession();toast('Регистрация выполнена')}catch(e){toast(e.message)}}async function login(){try{let identifier=$('loginPhone').value.trim();if(loginMode==='artist'&&!identifier.includes('@'))throw Error('Для существующей записи администратора укажите email');let email=loginMode==='artist'?identifier.toLowerCase():emailFromPhone(identifier);let {error}=await sb.auth.signInWithPassword({email,password:$('loginPass').value});if(error)throw error;await setSession();if(loginMode==='artist'&&!artist)throw Error('У учётной записи нет прав визажиста');page(loginMode==='artist'?'artist':'account');toast('Вход выполнен')}catch(e){toast('Не удалось войти: '+e.message)}}async function completeTemporaryPassword(){
  const password=$('newPermanentPassword')?.value;
