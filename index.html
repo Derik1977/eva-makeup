@@ -160,7 +160,7 @@ async function deleteMessageTemplate(id){
 }
 async function renderChat(){
  if(!user||!$('chatLog'))return;
- if(artist&&$('chatTemplate')&&!window.evaTemplates?.length)loadChatTemplateSelect();
+ if(artist&&$('chatTemplate')&&!$('chatTemplate').dataset.loaded){$('chatTemplate').dataset.loaded='1';loadChatTemplateSelect();}
  let q=sb.from('messages').select('id,sender_id,body,created_at,image_path,booking_id').eq('client_id',artist?selectedClient:user.id).order('created_at');
  q=selectedBooking?q.eq('booking_id',selectedBooking):q.is('booking_id',null);
  const {data,error}=await q;
@@ -311,7 +311,7 @@ async function payRecurring(id,amount,category){
  if(!confirm('Подтвердить, что регулярный расход фактически оплачен?'))return;
  const sum=Number(prompt('Фактически оплаченная сумма, ₽',amount));
  if(!Number.isInteger(sum)||sum<=0)return;
- const {error}=await sb.from('expenses').insert({category,amount_rub:sum,note:'Регулярный расход №'+id});
+ const {error}=await sb.from('expenses').insert({category,amount_rub:sum,note:'Регулярный расход №'+id,recurring_id:id,recurring_period:new Date().toISOString().slice(0,7)+'-01'});
  if(error)toast(error.message);else artistTab('finance');
 }
 const dateKey=dt=>new Date(dt).toLocaleDateString('en-CA',{timeZone:'Europe/Moscow'});
