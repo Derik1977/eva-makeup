@@ -119,11 +119,31 @@ if(tab==='orders'){
    root.innerHTML='<div class="panel"><h3>Клиенты и переписка</h3>'+((data||[]).filter(x=>x.role==='client').map(x=>'<div class="item row"><span>'+esc(x.full_name)+' · '+esc(x.phone)+'</span><button onclick="artistChat(\''+x.id+'\',null)">Общий чат</button></div>').join('')||'Нет зарегистрированных клиентов')+'</div>';return;
  }
  if(tab==='finance'){
-   let [pay,ex,w,completed,rec]=await Promise.all([sb.from('payments').select('amount_rub,kind'),sb.from('expenses').select('amount_rub'),sb.from('withdrawals').select('amount_rub'),sb.from('bookings').select('agreed_price_rub').eq('status','completed'),sb.from('recurring_expenses').select('*').eq('active',true)]);
-   let revenue=(completed.data||[]).reduce((n,x)=>n+x.agreed_price_rub,0),cash=(pay.data||[]).reduce((n,x)=>n+x.amount_rub*(x.kind==='refund'?-1:1),0),cost=(ex.data||[]).reduce((n,x)=>n+x.amount_rub,0),takes=(w.data||[]).reduce((n,x)=>n+x.amount_rub,0);
-   root.innerHTML='<div class="cards"><div class="card">Выручка<h2>'+rub(revenue)+'</h2></div><div class="card">Поступления<h2>'+rub(cash)+'</h2></div><div class="card">Расходы<h2>'+rub(cost)+'</h2></div><div class="card">Результат до налогов<h2>'+rub(revenue-cost)+'</h2></div></div><div class="panel"><p>Изменение денежного остатка: <b>'+rub(cash-cost-takes)+'</b>. Личные изъятия: '+rub(takes)+'</p><h3>Добавить расход</h3><div class="field"><label>Категория</label><select id="expenseCat"><option>Косметика</option><option>Материалы</option><option>Аренда</option><option>Реклама</option><option>Транспорт</option><option>Оборудование</option><option>Прочее</option></select></div><div class="field"><label>Сумма</label><input id="expenseSum" type="number" min="1"></div><button onclick="addFinance(\'expenses\')">Учесть расход</button><h3>Личные изъятия</h3><input id="withdrawSum" type="number" min="1"><button onclick="addFinance(\'withdrawals\')">Забрала себе</button><h3>Регулярные расходы</h3>'+(rec.data||[]).map(x=>'<div class="item">'+esc(x.title)+' · '+rub(x.planned_amount_rub)+' · '+x.day_of_month+'-го числа <button onclick="payRecurring('+x.id+','+x.planned_amount_rub+',\''+esc(x.category)+'\')">Оплачено</button></div>').join('')+'<button class="out" onclick="createRecurring()">Добавить напоминание</button></div>';
+   const ym=localStorage.getItem('eva-finance-month')||new Date().toISOString().slice(0,7);
+   const beg=ym+'-01',end=new Date(Date.UTC(Number(ym.slice(0,4)),Number(ym.slice(5,7)),1)).toISOString().slice(0,10);
+   let [pay,ex,w,completed,rec]=await Promise.all([
+    sb.from('payments').select('amount_rub,kind,received_at').gte('received_at',beg+'T00:00:00+03:00').lt('received_at',end+'T00:00:00+03:00'),
+    sb.from('expenses').select('amount_rub,category,occurred_on').gte('occurred_on',beg).lt('occurred_on',end),
+    sb.from('withdrawals').select('amount_rub,occurred_on').gte('occurred_on',beg).lt('occurred_on',end),
+    sb.from('bookings').select('agreed_price_rub,start_at').eq('status','completed').gte('start_at',beg+'T00:00:00+03:00').lt('start_at',end+'T00:00:00+03:00'),
+    sb.from('recurring_expenses').select('*').eq('active',true)
+   ]);
+   const revenue=(completed.data||[]).reduce((n,x)=>n+x.agreed_price_rub,0);
+   const cash=(pay.data||[]).reduce((n,x)=>n+x.amount_rub*(x.kind==='refund'?-1:1),0);
+   const cost=(ex.data||[]).reduce((n,x)=>n+x.amount_rub,0);
+   const takes=(w.data||[]).reduce((n,x)=>n+x.amount_rub,0);
+   window.evaFinanceSnapshot={month:ym,revenue,cash,cost,takes,result:revenue-cost,change:cash-cost-takes};
+   root.innerHTML='<div class="panel"><h3>Финансовый отчёт</h3><div class="field"><label>Выберите месяц</label><input type="month" value="'+ym+'" onchange="setFinanceMonth(this.value)"></div><button class="out" onclick="exportFinanceCsv()">Скачать CSV для Excel</button></div><div class="cards"><div class="card">Выручка выполненных услуг<h2>'+rub(revenue)+'</h2></div><div class="card">Поступления денег<h2>'+rub(cash)+'</h2></div><div class="card">Расходы<h2>'+rub(cost)+'</h2></div><div class="card">Результат до налогов<h2>'+rub(revenue-cost)+'</h2></div></div><div class="panel"><p>Изменение денежного остатка: <b>'+rub(cash-cost-takes)+'</b>; личные изъятия: '+rub(takes)+'.</p><p class="muted">Показатели относятся к выбранному месяцу. Предоплата учитывается при поступлении денег, выручка — по дате выполненной услуги.</p><h3>Добавить расход</h3><div class="field"><label>Категория</label><select id="expenseCat"><option>Косметика</option><option>Материалы</option><option>Аренда</option><option>Реклама</option><option>Транспорт</option><option>Оборудование</option><option>Прочее</option></select></div><div class="field"><label>Сумма</label><input id="expenseSum" type="number" min="1"></div><button onclick="addFinance(\'expenses\')">Учесть расход</button><h3>Личные изъятия</h3><input id="withdrawSum" type="number" min="1"><button onclick="addFinance(\'withdrawals\')">Забрала себе</button><h3>Регулярные расходы</h3>'+(rec.data||[]).map(x=>'<div class="item">'+esc(x.title)+' · '+rub(x.planned_amount_rub)+' · '+x.day_of_month+'-го числа <button onclick="payRecurring('+x.id+','+x.planned_amount_rub+',\''+esc(x.category)+'\')">Оплачено</button></div>').join('')+'<button class="out" onclick="createRecurring()">Добавить напоминание</button></div>';
    return;
  }
+}
+function setFinanceMonth(ym){if(/^\d{4}-\d{2}$/.test(ym)){localStorage.setItem('eva-finance-month',ym);artistTab('finance')}}
+function exportFinanceCsv(){
+ const x=window.evaFinanceSnapshot;if(!x)return;
+ const data=[['Показатель','Сумма, ₽'],['Период',x.month],['Выручка',x.revenue],['Поступления',x.cash],['Расходы',x.cost],['Личные изъятия',x.takes],['Результат до налогов',x.result],['Изменение денежного остатка',x.change]];
+ const csv='\uFEFF'+data.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
+ const file=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(file),a=document.createElement('a');
+ a.href=url;a.download='eva-finance-'+x.month+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);
 }
 function filterArtistOrders(){const q=$('orderSearch').value.toLowerCase();document.querySelectorAll('.order-item').forEach(el=>el.hidden=!el.dataset.search.toLowerCase().includes(q))}
 async function setDeposit(id){
