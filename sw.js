@@ -1,0 +1,1 @@
+const CACHE='eva-static-v1';self.addEventListener('install',event=>{self.skipWaiting();event.waitUntil(caches.open(CACHE).then(c=>c.addAll(['/eva-icon.jpg','/eva-icon.svg','/manifest.webmanifest'])))});self.addEventListener('activate',event=>{event.waitUntil(self.clients.claim())});
