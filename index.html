@@ -422,6 +422,20 @@ async function renderArtistSettings(root){
  root.innerHTML='<div class="panel"><h3>Настройки главной страницы</h3><p class="muted">Изменения сохраняются в базе и доступны при следующем входе с любого устройства.</p><div id="dashboardConfig"></div><button onclick="saveDashboardPreferences()">Сохранить панель</button><hr><h3>Утверждённые рабочие правила</h3><p>Пн–Сб: 09:00–19:00. Запись не менее чем за 2 часа, на 60 дней вперёд. Самостоятельная отмена за 24 часа.</p><p>Выезд: +2 000 ₽, дорога +500 ₽, раннее начало до 09:00 +1 000 ₽. На дорогу резервируется по 60 минут.</p><p>Предоплата свадебных заказов и выездов: индивидуальная сумма и срок. Остаток наличными.</p></div>';
  drawDashboardControls();
  drawPricingSettings(root);
+ await drawNotificationSettings(root);
+}
+async function drawNotificationSettings(root){
+ const {data}=await sb.from('artist_preferences').select('notification_options').eq('artist_id',user.id).maybeSingle();
+ const options=data?.notification_options||{};
+ const box=document.createElement('div');box.className='panel';box.style.marginTop='16px';
+ box.innerHTML='<h3>Уведомления в мессенджеры</h3><p class="muted">Настройки будущей интеграции. Пока отправка сообщений во внешние мессенджеры НЕ подключена: включение переключателя не отправляет уведомления.</p><p><label><input style="width:auto" id="notifyTelegram" type="checkbox" '+(options.telegram?'checked':'')+'> Telegram</label></p><p><label><input style="width:auto" id="notifyWhatsapp" type="checkbox" '+(options.whatsapp?'checked':'')+'> WhatsApp</label></p><button onclick="saveNotificationSettings()">Сохранить настройки</button>';
+ root.append(box);
+}
+async function saveNotificationSettings(){
+ const opts={telegram:$('notifyTelegram')?.checked===true,whatsapp:$('notifyWhatsapp')?.checked===true};
+ const {data}=await sb.from('artist_preferences').select('dashboard_sections').eq('artist_id',user.id).maybeSingle();
+ const {error}=await sb.from('artist_preferences').upsert({artist_id:user.id,notification_options:opts,dashboard_sections:data?.dashboard_sections||dashboardDefaults,updated_at:new Date().toISOString()});
+ toast(error?error.message:'Настройки сохранены. Внешняя отправка пока не подключена');
 }
 function drawDashboardControls(){
  const box=$('dashboardConfig');if(!box)return;
