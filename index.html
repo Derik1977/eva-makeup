@@ -631,7 +631,7 @@ async function updatePhotoConsent(id,yes){
 }
 
 const EVA_GALLERY_BUCKET='eva-portfolio-gallery',EVA_GALLERY_BASE='https://ahhjqyvlvenbdnmrptfp.supabase.co/storage/v1/object/public/eva-portfolio-gallery/';
-const evaGalleryUrl=p=>EVA_GALLERY_BASE+String(p).split('/').map(encodeURIComponent).join('/');
+const evaGalleryUrl=id=>'https://ahhjqyvlvenbdnmrptfp.supabase.co/functions/v1/eva-album-photo?id='+Number(id);
 const evaGalleryRole=r=>({before:'До',after:'После',angle:'Ракурс'})[r]||'Ракурс';
 let evaPublishedAlbums=[],evaCurrentAlbum=-1,evaCurrentPhoto=0;
 async function loadPublicPortfolio(){
@@ -649,7 +649,7 @@ async function loadPublicPortfolio(){
  if(note)note.style.display=evaPublishedAlbums.length?'none':'';
  const cards=evaPublishedAlbums.map((a,i)=>{
   const cover=a.photos.find(p=>p.is_cover)||a.photos[0];
-  return '<button type="button" class="eva-album-public-card" onclick="openEvaPublishedAlbum('+i+')"><img loading="lazy" src="'+evaGalleryUrl(cover.object_path)+'" alt="'+esc(a.title)+'"><b>'+esc(a.title)+'</b><span>'+a.photos.length+' фото · Смотреть образ →</span></button>';
+  return '<button type="button" class="eva-album-public-card" onclick="openEvaPublishedAlbum('+i+')"><img loading="lazy" src="'+evaGalleryUrl(cover.id)+'" alt="'+esc(a.title)+'"><b>'+esc(a.title)+'</b><span>'+a.photos.length+' фото · Смотреть образ →</span></button>';
  }).join('');
  const {data:legacy}=await sb.from('portfolio_items').select('id,title,services(title)').eq('published',true).order('created_at',{ascending:false}).limit(18);
  const older=(legacy||[]).map(x=>'<div class="card"><img loading="lazy" style="width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:6px" src="https://ahhjqyvlvenbdnmrptfp.supabase.co/functions/v1/eva-portfolio-image?id='+x.id+'" alt="'+esc(x.title)+'"><h3>'+esc(x.title)+'</h3></div>').join('');
@@ -662,10 +662,10 @@ function selectEvaPublishedPhoto(i){evaCurrentPhoto=i;renderEvaPublishedPhoto()}
 function renderEvaPublishedPhoto(){
  const a=evaPublishedAlbums[evaCurrentAlbum];if(!a)return;
  const p=a.photos[evaCurrentPhoto];$('evaPublishedAlbumTitle').textContent=a.title;
- $('evaPublishedAlbumImage').src=evaGalleryUrl(p.object_path);
+ $('evaPublishedAlbumImage').src=evaGalleryUrl(p.id);
  $('evaPublishedAlbumImage').alt=a.title+' — '+evaGalleryRole(p.role);
  $('evaPublishedAlbumCaption').textContent=evaGalleryRole(p.role)+' · '+(evaCurrentPhoto+1)+' / '+a.photos.length;
- $('evaPublishedAlbumThumbs').innerHTML=a.photos.map((x,i)=>'<button type="button" class="'+(i===evaCurrentPhoto?'selected':'')+'" onclick="selectEvaPublishedPhoto('+i+')"><img src="'+evaGalleryUrl(x.object_path)+'" alt="'+evaGalleryRole(x.role)+'"></button>').join('');
+ $('evaPublishedAlbumThumbs').innerHTML=a.photos.map((x,i)=>'<button type="button" class="'+(i===evaCurrentPhoto?'selected':'')+'" onclick="selectEvaPublishedPhoto('+i+')"><img src="'+evaGalleryUrl(x.id)+'" alt="'+evaGalleryRole(x.role)+'"></button>').join('');
 }
 async function artistPortfolio(root){
  const {data,error}=await sb.from('eva_albums').select('*').order('created_at',{ascending:false});
@@ -683,9 +683,10 @@ async function editEvaAlbum(id){
  const [a,p]=await Promise.all([sb.from('eva_albums').select('*').eq('id',id).single(),sb.from('eva_album_photos').select('*').eq('album_id',id).order('position')]);
  if(a.error||p.error)return toast(a.error?.message||p.error?.message);
  const root=$('artistContent'),album=a.data,photos=p.data||[];
+ for(const x of photos){const signed=await sb.storage.from(EVA_GALLERY_BUCKET).createSignedUrl(x.object_path,3600);x.signedUrl=signed.error?'':signed.data.signedUrl;}
  root.innerHTML='<div class="panel"><button class="out" onclick="artistTab(\'portfolio\')">← Все образы</button><h3>Редактирование образа</h3><div class="field"><label>Название</label><input id="evaEditAlbumTitle" maxlength="120" value="'+esc(album.title)+'"></div><div class="field"><label>Описание</label><textarea id="evaEditAlbumDescription" rows="3">'+esc(album.description)+'</textarea></div><div class="field"><label>Категория</label><select id="evaEditAlbumCategory"><option value="day">Дневной</option><option value="evening">Вечерний</option><option value="bridal">Свадебный</option><option value="other">Другое</option></select></div><button onclick="saveEvaAlbum('+id+')">Сохранить описание</button><h3>Загрузить фотографии</h3><input id="evaAlbumUpload" type="file" multiple accept="image/jpeg,image/png,image/webp"><p class="muted">JPG, PNG или WEBP, до 10 МБ на файл. Выбирайте сразу несколько фотографий.</p><button onclick="uploadEvaAlbumPhotos('+id+')">Загрузить фото</button><h3>Фотографии альбома</h3><p class="muted">Выберите тип кадра, обложку и порядок с помощью стрелок.</p><div id="evaAlbumPhotoEditor"></div><button onclick="publishEvaAlbum('+id+','+!album.published+')">'+(album.published?'Скрыть образ':'Опубликовать образ')+'</button></div>';
  $('evaEditAlbumCategory').value=album.category;
- $('evaAlbumPhotoEditor').innerHTML=photos.map((x,i)=>'<div class="eva-editor-photo"><img loading="lazy" src="'+evaGalleryUrl(x.object_path)+'" alt="Кадр '+(i+1)+'"><div><label>Назначение кадра</label><select onchange="setEvaPhotoRole('+x.id+',this.value)"><option value="before" '+(x.role==='before'?'selected':'')+'>До</option><option value="after" '+(x.role==='after'?'selected':'')+'>После</option><option value="angle" '+(x.role==='angle'?'selected':'')+'>Ракурс / дополнительное</option></select><div class="choice"><button class="out" onclick="setEvaPhotoCover('+id+','+x.id+')">'+(x.is_cover?'✓ Обложка':'Сделать обложкой')+'</button><button class="out" onclick="reorderEvaPhoto('+id+','+x.id+',-1)" '+(i===0?'disabled':'')+'>↑</button><button class="out" onclick="reorderEvaPhoto('+id+','+x.id+',1)" '+(i===photos.length-1?'disabled':'')+'>↓</button><button class="out" onclick="deleteEvaAlbumPhoto('+id+','+x.id+')">Удалить фото</button></div></div></div>').join('')||'<p class="muted">Фотографий пока нет.</p>';
+ $('evaAlbumPhotoEditor').innerHTML=photos.map((x,i)=>'<div class="eva-editor-photo"><img loading="lazy" src="'+x.signedUrl+'" alt="Кадр '+(i+1)+'"><div><label>Назначение кадра</label><select onchange="setEvaPhotoRole('+x.id+',this.value)"><option value="before" '+(x.role==='before'?'selected':'')+'>До</option><option value="after" '+(x.role==='after'?'selected':'')+'>После</option><option value="angle" '+(x.role==='angle'?'selected':'')+'>Ракурс / дополнительное</option></select><div class="choice"><button class="out" onclick="setEvaPhotoCover('+id+','+x.id+')">'+(x.is_cover?'✓ Обложка':'Сделать обложкой')+'</button><button class="out" onclick="reorderEvaPhoto('+id+','+x.id+',-1)" '+(i===0?'disabled':'')+'>↑</button><button class="out" onclick="reorderEvaPhoto('+id+','+x.id+',1)" '+(i===photos.length-1?'disabled':'')+'>↓</button><button class="out" onclick="deleteEvaAlbumPhoto('+id+','+x.id+')">Удалить фото</button></div></div></div>').join('')||'<p class="muted">Фотографий пока нет.</p>';
 }
 async function saveEvaAlbum(id){
  const title=$('evaEditAlbumTitle').value.trim();if(title.length<2)return toast('Введите название');
