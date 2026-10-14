@@ -381,10 +381,18 @@ const dateKey=dt=>new Date(dt).toLocaleDateString('en-CA',{timeZone:'Europe/Mosc
 let calendarView=localStorage.getItem('eva-calendar-view')||'week',calendarPivot=new Date().toISOString().slice(0,10);
 async function renderArtistCalendar(root){
  const opts=[['day','День'],['week','Неделя'],['month','Месяц']];
+ const pivot=new Date(calendarPivot+'T12:00:00Z');
+ const from=new Date(Date.UTC(pivot.getUTCFullYear(),pivot.getUTCMonth(),1));
+ const until=new Date(Date.UTC(pivot.getUTCFullYear(),pivot.getUTCMonth()+1,1));
+ if(calendarView==='day'){from.setTime(Date.parse(calendarPivot+'T00:00:00Z'));until.setTime(from.getTime()+86400000)}
+ if(calendarView==='week'){from.setTime(Date.parse(calendarPivot+'T00:00:00Z'));from.setUTCDate(from.getUTCDate()-((from.getUTCDay()+6)%7));until.setTime(from.getTime()+7*86400000)}
+ // Calendar dates are Moscow-local (UTC+03:00), while Supabase timestamps are UTC.
+ const start=new Date(from.getTime()-3*3600000).toISOString(),end=new Date(until.getTime()-3*3600000).toISOString();
  const [qs,blocked]=await Promise.all([
-  sb.from('bookings').select('id,start_at,status,kind,guest_name,services(title,duration_min,buffer_min),profiles(full_name)').order('start_at',{ascending:true}).limit(500),
-  sb.from('calendar_blocks').select('id,starts_at,ends_at,title').order('starts_at',{ascending:true}).limit(300)
+  sb.from('bookings').select('id,start_at,status,kind,guest_name,services(title,duration_min,buffer_min),profiles(full_name)').gte('start_at',start).lt('start_at',end).order('start_at',{ascending:true}),
+  sb.from('calendar_blocks').select('id,starts_at,ends_at,title').lt('starts_at',end).gte('starts_at',new Date(from.getTime()-86400000).toISOString()).order('starts_at',{ascending:true})
  ]);
+ if(qs.error||blocked.error){root.textContent='Не удалось загрузить календарь: '+(qs.error||blocked.error).message;return}
  const items=qs.data||[],blocks=blocked.data||[];
  const dayUTC=new Date(calendarPivot+'T12:00:00Z');
  const days=calendarView==='day'?[calendarPivot]:calendarView==='week'?Array.from({length:7},(_,i)=>{let d=new Date(dayUTC);d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7)+i);return d.toISOString().slice(0,10)}):Array.from({length:new Date(dayUTC.getUTCFullYear(),dayUTC.getUTCMonth()+1,0).getDate()},(_,i)=>calendarPivot.slice(0,7)+'-'+String(i+1).padStart(2,'0'));
