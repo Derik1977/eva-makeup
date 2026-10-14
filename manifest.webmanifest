@@ -4,7 +4,7 @@
   "short_name": "EVA",
   "description": "Онлайн-запись на макияж в EVA MAKEUP STUDIO",
   "lang": "ru",
-  "start_url": "/?source=pwa",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#fff7f4",
