@@ -1,1 +1,10 @@
-const CACHE='eva-static-v1';self.addEventListener('install',event=>{self.skipWaiting();event.waitUntil(caches.open(CACHE).then(c=>c.addAll(['/eva-icon.jpg','/eva-icon.svg','/manifest.webmanifest'])))});self.addEventListener('activate',event=>{event.waitUntil(self.clients.claim())});
+// Legacy service worker retirement: EVA is online-first; no offline caching.
+self.addEventListener('install',event=>{self.skipWaiting()});
+self.addEventListener('activate',event=>{
+ event.waitUntil((async()=>{
+  const keys=await caches.keys();
+  await Promise.all(keys.filter(k=>k.startsWith('eva-static-')).map(k=>caches.delete(k)));
+  await self.registration.unregister();
+  await self.clients.claim();
+ })());
+});
