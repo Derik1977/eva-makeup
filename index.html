@@ -64,7 +64,7 @@ function page(id){document.querySelectorAll('.section').forEach(n=>n.classList.t
  $('quote').innerHTML='<div class="item row">'+esc(s.title)+' <b>'+rub(s.price_rub)+'</b></div>'+
  (travel?'<div class="item row">Выезд <b>'+rub(pricing.travel_fee_rub)+'</b></div><div class="item row">Дорога <b>'+rub(pricing.road_fee_rub)+'</b></div>':'')+
  (early?'<div class="item row">Раннее начало <b>'+rub(pricing.early_fee_rub)+'</b></div>':'')+
- '<h2>Итого '+rub(cost)+'</h2><p class="muted">Услуга: '+s.duration_min+' мин; перерыв: '+s.buffer_min+' мин'+(travel?'; дорога по '+pricing.travel_buffer_min+' мин до и после':'')+'</p>';
+ '<h2>Итого '+rub(cost)+'</h2><p class="muted">'+(Number(s.deposit_default_rub)>0?'Предоплата по услуге: '+rub(s.deposit_default_rub)+'. Сумма может быть изменена Евой.':'Предоплата не требуется.')+'</p><p class="muted">Услуга: '+s.duration_min+' мин; перерыв: '+s.buffer_min+' мин'+(travel?'; дорога по '+pricing.travel_buffer_min+' мин до и после':'')+'</p>';
  return cost;
 }
 async function loadPricingSettings(){
@@ -336,7 +336,7 @@ if(tab==='orders'){
    const {data,error}=await sb.from('bookings').select('*,services(title),profiles(full_name,phone)').order('start_at',{ascending:false}).limit(100);
    if(error){root.textContent=error.message;return}
    const all=data||[];
-   root.innerHTML='<div class="panel"><h3>Заявки</h3><label>Поиск клиента, услуги или номера</label><input id="orderSearch" oninput="filterArtistOrders()" placeholder="Найти заявку"><div id="orderItems">'+all.map(o=>'<div class="item order-item" data-search="'+esc((o.profiles?.full_name||'')+' '+o.id+' '+(o.services?.title||''))+'"><div class="row"><b>№ '+o.id+' · '+esc(o.profiles?.full_name||o.guest_name||'Клиент')+' · '+esc(o.services?.title||'Услуга')+'</b><span class="pill">'+esc(o.status)+'</span></div><p>'+fmt(o.start_at)+' · '+rub(o.agreed_price_rub)+' · '+(o.kind==='travel'?'Выезд':'Студия')+'</p>'+(o.address?'<p>Адрес: '+esc(o.address)+'</p>':'')+(o.client_wishes?'<p><b>Пожелания:</b> '+esc(o.client_wishes)+'</p>':'')+'<p class="muted">Предоплата: '+(o.deposit_required_rub==null?'не назначена':rub(o.deposit_required_rub))+' · срок: '+(o.deposit_due_at?fmt(o.deposit_due_at):'не назначен')+'</p><div class="choice"><button onclick="setDeposit('+o.id+')">Назначить предоплату</button><button class="out" onclick="recordPayment('+o.id+')">Получить оплату</button><button class="out" onclick="changeBooking('+o.id+',\'confirmed\')">Подтвердить</button><button class="out" onclick="changeBooking('+o.id+',\'completed\')">Выполнен</button><button class="out" onclick="changeBooking('+o.id+',\'cancelled\')">Отменить</button><button class="out" onclick="saveArtistNote('+o.id+')">Заметка</button><button class="out" onclick="editBooking('+o.id+')">Изменить</button><button class="out" onclick="bookingHistory('+o.id+')">История</button><button onclick="artistChat(\''+o.client_id+'\','+o.id+')">Чат</button></div></div>').join('')+'</div></div>';
+   root.innerHTML='<div class="panel"><h3>Заявки</h3><label>Поиск клиента, услуги или номера</label><input id="orderSearch" oninput="filterArtistOrders()" placeholder="Найти заявку"><div id="orderItems">'+all.map(o=>'<div class="item order-item" data-search="'+esc((o.profiles?.full_name||'')+' '+o.id+' '+(o.services?.title||''))+'"><div class="row"><b>№ '+o.id+' · '+esc(o.profiles?.full_name||o.guest_name||'Клиент')+' · '+esc(o.services?.title||'Услуга')+'</b><span class="pill">'+esc(o.status)+'</span></div><p>'+fmt(o.start_at)+' · '+rub(o.agreed_price_rub)+' · '+(o.kind==='travel'?'Выезд':'Студия')+'</p>'+(o.address?'<p>Адрес: '+esc(o.address)+'</p>':'')+(o.client_wishes?'<p><b>Пожелания:</b> '+esc(o.client_wishes)+'</p>':'')+'<p class="muted">Предоплата: '+(o.deposit_required_rub==null?'не назначена':rub(o.deposit_required_rub))+' · срок: '+(o.deposit_due_at?fmt(o.deposit_due_at):'не назначен')+'</p><div class="choice"><button onclick="setDeposit('+o.id+')">Изменить предоплату</button><button class="out" onclick="recordPayment('+o.id+')">Получить оплату</button><button class="out" onclick="changeBooking('+o.id+',\'confirmed\')">Подтвердить</button><button class="out" onclick="changeBooking('+o.id+',\'completed\')">Выполнен</button><button class="out" onclick="changeBooking('+o.id+',\'cancelled\')">Отменить</button><button class="out" onclick="saveArtistNote('+o.id+')">Заметка</button><button class="out" onclick="editBooking('+o.id+')">Изменить</button><button class="out" onclick="bookingHistory('+o.id+')">История</button><button onclick="artistChat(\''+o.client_id+'\','+o.id+')">Чат</button></div></div>').join('')+'</div></div>';
    return;
  }
  if(tab==='clients'||tab==='messages'){
@@ -373,14 +373,27 @@ function exportFinanceCsv(){
 }
 function filterArtistOrders(){const q=$('orderSearch').value.toLowerCase();document.querySelectorAll('.order-item').forEach(el=>el.hidden=!el.dataset.search.toLowerCase().includes(q))}
 async function setDeposit(id){
- const amount=Number(prompt('Сумма обязательной предоплаты в рублях'));
- if(!Number.isInteger(amount)||amount<=0)return toast('Нужна положительная сумма');
- const due=prompt('Крайний срок перевода: ГГГГ-ММ-ДД ЧЧ:ММ (по Москве)');
- if(!due||!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(due))return toast('Некорректный срок');
- const iso=new Date(due.replace(' ','T')+':00+03:00');
- if(!Number.isFinite(iso.getTime())||iso.getTime()<Date.now())return toast('Укажите будущий срок');
- const {error}=await sb.from('bookings').update({deposit_required_rub:amount,deposit_due_at:iso.toISOString(),status:'awaiting_deposit'}).eq('id',id);
- if(error)toast(error.message);else{toast('Предоплата назначена');artistTab('orders')}
+ const q=await sb.from('bookings').select('id,deposit_required_rub,agreed_price_rub,status').eq('id',id).single();
+ if(q.error)return toast(q.error.message);
+ const input=prompt('Предоплата в рублях (0 — отключить)',String(q.data.deposit_required_rub||0));
+ if(input===null)return;
+ const amount=Number(input);
+ if(!Number.isInteger(amount)||amount<0||amount>q.data.agreed_price_rub)return toast('Сумма должна быть от 0 до стоимости заказа');
+ let due=null;
+ if(amount>0){
+  const raw=prompt('Крайний срок: ГГГГ-ММ-ДД ЧЧ:ММ по Москве (можно оставить пустым)');
+  if(raw===null)return;
+  if(raw.trim()){
+   const date=new Date(raw.trim().replace(' ','T')+':00+03:00');
+   if(!Number.isFinite(date.getTime())||date.getTime()<Date.now())return toast('Некорректный срок');
+   due=date.toISOString();
+  }
+ }
+ const changes={deposit_required_rub:amount,deposit_due_at:due};
+ if(amount>0&&q.data.status==='confirmed')changes.status='awaiting_deposit';
+ if(amount===0&&q.data.status==='awaiting_deposit')changes.status='confirmed';
+ const {error}=await sb.from('bookings').update(changes).eq('id',id);
+ if(error)toast(error.message);else{toast(amount?'Предоплата изменена':'Предоплата отключена');artistTab('orders')}
 }
 async function recordPayment(id){
  const kind=prompt('Назначение: deposit (предоплата), balance (остаток), refund (возврат)','deposit');
@@ -494,7 +507,7 @@ async function saveDashboardPreferences(){
 function drawPricingSettings(root){
  const fields=[['travel_fee_rub','Выезд, ₽'],['road_fee_rub','Дорога, ₽'],['early_fee_rub','Ранний выезд, ₽'],['travel_buffer_min','Время в пути в одну сторону, мин']];
  let html='<div class="panel" style="margin-top:16px"><h3>Тарифы и услуги</h3><p class="muted">Цены применяются к новым заказам, уже созданные не пересчитываются автоматически.</p>'+fields.map(([key,label])=>'<div class="field"><label>'+label+'</label><input type="number" min="0" id="price_'+key+'" value="'+Number(pricing[key])+'"></div>').join('')+'<div class="field"><label>Раннее начало до</label><input type="time" id="price_early_before" value="'+String(pricing.early_before).slice(0,5)+'"></div><button onclick="saveTravelPricing()">Сохранить тарифы</button><h3>Услуги</h3>';
- html+=services.map(x=>'<div class="item"><b>'+esc(x.title)+'</b><div class="field"><label>Цена, ₽</label><input id="servicePrice_'+x.id+'" type="number" min="0" value="'+x.price_rub+'"></div><div class="field"><label>Работа, мин</label><input id="serviceDuration_'+x.id+'" type="number" min="15" value="'+x.duration_min+'"></div><div class="field"><label>Перерыв, мин</label><input id="serviceBuffer_'+x.id+'" type="number" min="0" value="'+x.buffer_min+'"></div><button class="out" onclick="saveServiceSettings('+x.id+')">Сохранить услугу</button></div>').join('')+'</div>';
+ html+=services.map(x=>'<div class="item"><b>'+esc(x.title)+'</b><div class="field"><label>Цена, ₽</label><input id="servicePrice_'+x.id+'" type="number" min="0" value="'+x.price_rub+'"></div><div class="field"><label>Предоплата, ₽ (0 — без предоплаты)</label><input id="serviceDeposit_'+x.id+'" type="number" min="0" value="'+(x.deposit_default_rub||0)+'"></div><div class="field"><label>Работа, мин</label><input id="serviceDuration_'+x.id+'" type="number" min="15" value="'+x.duration_min+'"></div><div class="field"><label>Перерыв, мин</label><input id="serviceBuffer_'+x.id+'" type="number" min="0" value="'+x.buffer_min+'"></div><button class="out" onclick="saveServiceSettings('+x.id+')">Сохранить услугу</button></div>').join('')+'</div>';
  root.insertAdjacentHTML('beforeend',html);
 }
 async function saveTravelPricing(){
@@ -510,9 +523,10 @@ async function saveTravelPricing(){
  if(error)toast(error.message);else{await loadPricingSettings();quote();toast('Тарифы обновлены');artistTab('settings')}
 }
 async function saveServiceSettings(id){
- const price_rub=Number($('servicePrice_'+id).value),duration_min=Number($('serviceDuration_'+id).value),buffer_min=Number($('serviceBuffer_'+id).value);
+ const price_rub=Number($('servicePrice_'+id).value),deposit_default_rub=Number($('serviceDeposit_'+id).value),duration_min=Number($('serviceDuration_'+id).value),buffer_min=Number($('serviceBuffer_'+id).value);
+ if(!Number.isInteger(deposit_default_rub)||deposit_default_rub<0||deposit_default_rub>price_rub)return toast('Предоплата должна быть от 0 до цены услуги');
  if(!Number.isInteger(price_rub)||price_rub<0||!Number.isInteger(duration_min)||duration_min<15||!Number.isInteger(buffer_min)||buffer_min<0)return toast('Проверьте стоимость, длительность и перерыв');
- const {error}=await sb.from('services').update({price_rub,duration_min,buffer_min}).eq('id',id);
+ const {error}=await sb.from('services').update({price_rub,duration_min,buffer_min,deposit_default_rub}).eq('id',id);
  if(error)toast(error.message);else{await loadServices();toast('Услуга обновлена');artistTab('settings')}
 }
 async function renderAppNotifications(root){
