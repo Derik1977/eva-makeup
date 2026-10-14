@@ -679,7 +679,7 @@ if ('caches' in window) {
 }
 if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true) {
   const openLink=document.createElement('a');
-  openLink.href='https://eva-makeup.pages.dev/';
+  openLink.href=location.origin+'/';
   openLink.target='_blank';openLink.rel='noopener noreferrer';
   openLink.textContent='Открыть в браузере ↗';
   openLink.setAttribute('aria-label','Открыть сайт EVA в браузере');
