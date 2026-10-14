@@ -386,7 +386,8 @@ async function renderArtistCalendar(root){
  const until=new Date(Date.UTC(pivot.getUTCFullYear(),pivot.getUTCMonth()+1,1));
  if(calendarView==='day'){from.setTime(Date.parse(calendarPivot+'T00:00:00Z'));until.setTime(from.getTime()+86400000)}
  if(calendarView==='week'){from.setTime(Date.parse(calendarPivot+'T00:00:00Z'));from.setUTCDate(from.getUTCDate()-((from.getUTCDay()+6)%7));until.setTime(from.getTime()+7*86400000)}
- const start=from.toISOString(),end=until.toISOString();
+ // Calendar dates are Moscow-local (UTC+03:00), while Supabase timestamps are UTC.
+ const start=new Date(from.getTime()-3*3600000).toISOString(),end=new Date(until.getTime()-3*3600000).toISOString();
  const [qs,blocked]=await Promise.all([
   sb.from('bookings').select('id,start_at,status,kind,guest_name,services(title,duration_min,buffer_min),profiles(full_name)').gte('start_at',start).lt('start_at',end).order('start_at',{ascending:true}),
   sb.from('calendar_blocks').select('id,starts_at,ends_at,title').lt('starts_at',end).gte('starts_at',new Date(from.getTime()-86400000).toISOString()).order('starts_at',{ascending:true})
