@@ -150,7 +150,7 @@ async function logout(){
  const {data,error}=await sb.from('bookings').select('id,kind,start_at,status,agreed_price_rub,services(title)').order('start_at',{ascending:false});
  root.innerHTML='<h3>Мои записи</h3>'+((data||[]).map(o=>'<div class="item"><div class="row"><b>'+esc(o.services?.title||'Услуга')+'</b><span class="pill">'+esc(o.status)+'</span></div><p>'+fmt(o.start_at)+' · '+(o.kind==='studio'?'Студия':'Выезд')+' · '+rub(o.agreed_price_rub)+'</p><button class="out" onclick="openChat('+o.id+')">Чат заказа</button>'+(new Date(o.start_at).getTime()>Date.now()+24*3600000&&['pending','awaiting_deposit','confirmed'].includes(o.status)?'<button class="out" onclick="cancelClientBooking('+o.id+')">Отменить запись</button>':'')+'</div>').join('')||'<p>Записей пока нет.</p>')+(error?'<p class="error">'+esc(error.message)+'</p>':'');
  }else if(tab==='chat'){
- selectedBooking=null;root.innerHTML='<h3>Общий чат с Евой</h3>'+chatShell();await renderChat();watchChatRealtime();
+ selectedBooking=null;root.innerHTML='<h3>Общий чат с Евой</h3>'+chatShell();await renderChat();await watchChatRealtime();watchChatRealtime();
  }else if(tab==='photos'){
  await clientPhotos(root);
  }else if(tab==='reviews'){
