@@ -247,6 +247,7 @@ async function enableEvaPush(){
 async function testEvaPush(){
  try{
   if(!user)throw Error('Сначала войдите');
+  toast('Через 7 секунд придёт тестовое уведомление. Можете заблокировать экран телефона.');
   const {data,error}=await sb.functions.invoke('eva-push-message',{body:{action:'test'}});
   if(error)throw error;
   if(!data?.sent)throw Error('Устройство ещё не зарегистрировано или доставка не удалась. Нажмите «Включить push».');
