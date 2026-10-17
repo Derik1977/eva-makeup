@@ -150,7 +150,7 @@ async function logout(){
  const {data,error}=await sb.from('bookings').select('id,kind,start_at,status,agreed_price_rub,services(title)').order('start_at',{ascending:false});
  root.innerHTML='<h3>Мои записи</h3>'+((data||[]).map(o=>'<div class="item"><div class="row"><b>'+esc(o.services?.title||'Услуга')+'</b><span class="pill">'+esc(o.status)+'</span></div><p>'+fmt(o.start_at)+' · '+(o.kind==='studio'?'Студия':'Выезд')+' · '+rub(o.agreed_price_rub)+'</p><button class="out" onclick="openChat('+o.id+')">Чат заказа</button>'+(new Date(o.start_at).getTime()>Date.now()+24*3600000&&['pending','awaiting_deposit','confirmed'].includes(o.status)?'<button class="out" onclick="cancelClientBooking('+o.id+')">Отменить запись</button>':'')+'</div>').join('')||'<p>Записей пока нет.</p>')+(error?'<p class="error">'+esc(error.message)+'</p>':'');
  }else if(tab==='chat'){
- selectedBooking=null;root.innerHTML='<h3>Общий чат с Евой</h3>'+chatShell();await renderChat();
+ selectedBooking=null;root.innerHTML='<h3>Общий чат с Евой</h3>'+chatShell();await renderChat();watchChatRealtime();
  }else if(tab==='photos'){
  await clientPhotos(root);
  }else if(tab==='reviews'){
@@ -222,7 +222,7 @@ async function watchChatRealtime(){
  const bookingId=selectedBooking;
  chatRealtimeChannel=sb.channel('eva-chat-'+cid+'-'+(bookingId||'general')+'-'+Date.now())
  .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'client_id=eq.'+cid},payload=>{
-   if((payload.new?.booking_id??null)===(bookingId??null)&&$('chatLog'))renderChat();
+   if((payload.new?.booking_id??null)===(bookingId??null)&&$('chatLog'))renderChat().catch(e=>console.error('EVA chat reload:',e));
  }).subscribe();
 }
 const EVA_VAPID_PUBLIC_KEY='BJtCard0dZpKcXGaz1815WdEhttXyK9rAdfrlVC2fACg2Z384eTDGXVSYSemo-3OXXsZhPF88MLjpIV_Mkuwitc';
@@ -309,21 +309,31 @@ async function renderChat(){
  $('chatLog').scrollTop=$('chatLog').scrollHeight;
 }
 async function sendMessage(){
- const body=$('chatText')?.value.trim()||'',file=$('chatImage')?.files?.[0],cid=artist?selectedClient:user?.id;
- if(!user||!cid||(!body&&!file))return;
+ const input=$('chatText'),button=input?.nextElementSibling;
+ const body=input?.value.trim()||'',file=$('chatImage')?.files?.[0],cid=artist?selectedClient:user?.id;
+ if(!user){toast('Для переписки необходимо войти в аккаунт');return}
+ if(!cid){toast(artist?'Сначала выберите клиента в разделе «Сообщения»':'Не удалось определить клиента. Перезагрузите кабинет');return}
+ if(!body&&!file){toast('Введите сообщение или прикрепите фотографию');return}
+ if(button)button.disabled=true;
  let path=null;
- if(file){
-  if(file.size>5242880||!['image/jpeg','image/png','image/webp'].includes(file.type))return toast('Фото должно быть JPG, PNG или WEBP, до 5 МБ');
-  const ext=file.type==='image/png'?'png':file.type==='image/webp'?'webp':'jpg';
-  path=cid+'/'+crypto.randomUUID()+'.'+ext;
-  const {error:uploadError}=await sb.storage.from('eva-client-private').upload(path,file,{contentType:file.type,upsert:false});
-  if(uploadError)return toast(uploadError.message);
- }
- const {data:createdMessage,error}=await sb.from('messages').insert({client_id:cid,booking_id:selectedBooking,sender_id:user.id,body,image_path:path}).select('id').single();
- if(error){if(path)await sb.storage.from('eva-client-private').remove([path]);return toast(error.message)}
- $('chatText').value='';if($('chatImage'))$('chatImage').value='';
- if(createdMessage?.id)sb.functions.invoke('eva-push-message',{body:{message_id:createdMessage.id}}).then(({error,data})=>{if(error||data?.failed)console.warn('EVA: push was not fully delivered',error||data)}).catch(e=>console.warn('EVA push delivery unavailable',e));
- await renderChat();
+ try{
+  if(file){
+   if(file.size>5242880||!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error('Фото должно быть JPG, PNG или WEBP, до 5 МБ');
+   const ext=file.type==='image/png'?'png':file.type==='image/webp'?'webp':'jpg';
+   path=cid+'/'+crypto.randomUUID()+'.'+ext;
+   const {error:uploadError}=await sb.storage.from('eva-client-private').upload(path,file,{contentType:file.type,upsert:false});
+   if(uploadError)throw uploadError;
+  }
+  const {data:createdMessage,error}=await sb.from('messages').insert({client_id:cid,booking_id:selectedBooking||null,sender_id:user.id,body,image_path:path}).select('id').single();
+  if(error)throw error;
+  if(input)input.value='';if($('chatImage'))$('chatImage').value='';
+  await renderChat();
+  if(createdMessage?.id)sb.functions.invoke('eva-push-message',{body:{message_id:createdMessage.id}}).then(({error,data})=>{if(error||data?.failed)console.warn('EVA push delivery issue:',error||data)}).catch(e=>console.warn('EVA push delivery issue:',e));
+ }catch(e){
+  console.error('EVA message delivery:',e);
+  if(path)await sb.storage.from('eva-client-private').remove([path]);
+  toast('Сообщение не отправлено: '+(e?.message||'проверьте подключение'));
+ }finally{if(button)button.disabled=false}
 }
 async function saveChatPhoto(path,bookingId){
  const cid=artist?selectedClient:user.id;
