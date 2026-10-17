@@ -321,7 +321,9 @@ async function sendMessage(){
  }
  const {data:createdMessage,error}=await sb.from('messages').insert({client_id:cid,booking_id:selectedBooking,sender_id:user.id,body,image_path:path}).select('id').single();
  if(error){if(path)await sb.storage.from('eva-client-private').remove([path]);return toast(error.message)}
- $('chatText').value='';if($('chatImage'))$('chatImage').value='';await renderChat();if(createdMessage?.id)sb.functions.invoke('eva-push-message',{body:{message_id:createdMessage.id}}).catch(e=>console.warn('EVA push delivery unavailable',e));
+ $('chatText').value='';if($('chatImage'))$('chatImage').value='';
+ if(createdMessage?.id)sb.functions.invoke('eva-push-message',{body:{message_id:createdMessage.id}}).then(({error,data})=>{if(error||data?.failed)console.warn('EVA: push was not fully delivered',error||data)}).catch(e=>console.warn('EVA push delivery unavailable',e));
+ await renderChat();
 }
 async function saveChatPhoto(path,bookingId){
  const cid=artist?selectedClient:user.id;
