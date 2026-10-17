@@ -222,7 +222,26 @@ async function watchChatRealtime(){
    if((payload.new?.booking_id??null)===(bookingId??null)&&$('chatLog'))renderChat();
  }).subscribe();
 }
-function chatShell(){return (artist?'<div class="field"><label>Быстрый ответ</label><select id="chatTemplate" onchange="applyChatTemplate()"><option value="">Выберите шаблон</option></select></div>':'')+'<div id="chatLog" class="chatlog"></div><div class="row" style="margin-top:12px"><input id="chatText" style="flex:1" placeholder="Ваше сообщение"><button onclick="sendMessage()">Отправить</button></div><div class="field"><label>Прикрепить фотографию JPG, PNG или WEBP до 5 МБ</label><input type="file" id="chatImage" accept="image/jpeg,image/png,image/webp"></div>'}
+const EVA_VAPID_PUBLIC_KEY='BLNZDbfBb4k6O1Jk0BWnfA3Eg0eR2nhavgWFgHZxQO6W9DmyfFeNmW3VbwkyCcsZKVbrXr8JIRtpmOJO61KQzKQ';
+function evaUrlBase64ToUint8Array(value){const p='='.repeat((4-value.length%4)%4);const raw=atob((value+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(raw,c=>c.charCodeAt(0));}
+async function enableEvaPush(){
+ try {
+  if(!user)throw Error('Войдите в личный кабинет');
+  if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window))throw Error('На этом устройстве системные уведомления недоступны');
+  if(/iPhone|iPad|iPod/i.test(navigator.userAgent)&&!window.navigator.standalone&&!window.matchMedia('(display-mode: standalone)').matches)throw Error('На iPhone сначала добавьте EVA на экран «Домой» и откройте через иконку');
+  const permission=await Notification.requestPermission();
+  if(permission!=='granted')throw Error('Разрешите уведомления для EVA в настройках телефона');
+  const registration=await navigator.serviceWorker.ready;
+  let subscription=await registration.pushManager.getSubscription();
+  if(!subscription)subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:evaUrlBase64ToUint8Array(EVA_VAPID_PUBLIC_KEY)});
+  const json=subscription.toJSON();
+  await sb.from('eva_push_subscriptions').delete().eq('endpoint',subscription.endpoint).eq('user_id',user.id);
+  const {error}=await sb.from('eva_push_subscriptions').insert({user_id:user.id,endpoint:subscription.endpoint,p256dh:json.keys.p256dh,auth_key:json.keys.auth});
+  if(error)throw error;
+  toast('Уведомления на этом устройстве включены');
+ } catch(e){toast('Push: '+e.message);}
+}
+function chatShell(){return (artist?'<div class="field"><label>Быстрый ответ</label><select id="chatTemplate" onchange="applyChatTemplate()"><option value="">Выберите шаблон</option></select></div>':'')+'<div id="chatLog" class="chatlog"></div><div style="margin:10px 0"><button type="button" class="out" onclick="enableEvaPush()">🔔 Включить уведомления о сообщениях</button></div><div class="row" style="margin-top:12px"><input id="chatText" style="flex:1" placeholder="Ваше сообщение"><button onclick="sendMessage()">Отправить</button></div><div class="field"><label>Прикрепить фотографию JPG, PNG или WEBP до 5 МБ</label><input type="file" id="chatImage" accept="image/jpeg,image/png,image/webp"></div>'}
 async function openChat(id){selectedBooking=id;$('clientContent').innerHTML='<h3>Чат заказа №'+id+'</h3>'+chatShell();await renderChat();watchChatRealtime()}
 async function loadChatTemplateSelect(){
  const list=$('chatTemplate');if(!artist||!list)return;
@@ -287,9 +306,9 @@ async function sendMessage(){
   const {error:uploadError}=await sb.storage.from('eva-client-private').upload(path,file,{contentType:file.type,upsert:false});
   if(uploadError)return toast(uploadError.message);
  }
- const {error}=await sb.from('messages').insert({client_id:cid,booking_id:selectedBooking,sender_id:user.id,body,image_path:path});
+ const {data:createdMessage,error}=await sb.from('messages').insert({client_id:cid,booking_id:selectedBooking,sender_id:user.id,body,image_path:path}).select('id').single();
  if(error){if(path)await sb.storage.from('eva-client-private').remove([path]);return toast(error.message)}
- $('chatText').value='';if($('chatImage'))$('chatImage').value='';await renderChat();
+ $('chatText').value='';if($('chatImage'))$('chatImage').value='';await renderChat();if(createdMessage?.id)sb.functions.invoke('eva-push-message',{body:{message_id:createdMessage.id}}).catch(e=>console.warn('EVA push delivery unavailable',e));
 }
 async function saveChatPhoto(path,bookingId){
  const cid=artist?selectedClient:user.id;
